@@ -25,8 +25,6 @@
 #ifndef OATPP_FLATBUFFERS_OBJECTMAPPER_HPP
 #define OATPP_FLATBUFFERS_OBJECTMAPPER_HPP
 
-#include "FlatBuffersWrapper.hpp"
-
 #include "oatpp/data/mapping/ObjectMapper.hpp"
 #include "oatpp/data/stream/Stream.hpp"
 #include "oatpp/utils/parser/Caret.hpp"

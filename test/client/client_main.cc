@@ -89,39 +89,17 @@ public:
       return finish();
     }
     
-    // 从响应中读取 FlatBuffers 二进制数据
-    // 使用readBodyToStringAsync，然后手动转换为buffer
-    return response->readBodyToStringAsync()
-        .callbackTo(&ClientCoroutine::onGetBodyString);
+    // 使用 mapper 直接解析为 Object<Monster>
+    return response->readBodyToDtoAsync<ofb::Object<MyGame::Example::Monster>>(m_client->getObjectMapper())
+        .callbackTo(&ClientCoroutine::onGetMonsterObj);
   }
   
-  Action onGetBodyString(const oatpp::String& bodyString) {
-    if (!bodyString || bodyString->empty()) {
-      std::cerr << "Failed to read Monster buffer from response (empty)" << std::endl;
+  Action onGetMonsterObj(const ofb::Object<MyGame::Example::Monster>& monsterObj) {
+    if (!monsterObj) {
+      std::cerr << "Failed to parse Monster from response" << std::endl;
       return finish();
     }
-    
-    // 将String转换为vector<uint8_t>
-    auto buffer = std::make_shared<std::vector<uint8_t>>(
-        reinterpret_cast<const uint8_t*>(bodyString->data()),
-        reinterpret_cast<const uint8_t*>(bodyString->data()) + bodyString->size());
-    
-    return onGetBody(buffer);
-  }
-  
-  Action onGetBody(const std::shared_ptr<std::vector<uint8_t>>& buffer) {
-    if (!buffer || buffer->empty()) {
-      std::cerr << "Failed to read Monster buffer from response" << std::endl;
-      return finish();
-    }
-    
-    std::cout << "Received Monster buffer from GET /monster, size: " 
-              << buffer->size() << " bytes" << std::endl;
-    
-    // 从 buffer 中获取 Monster Table
-    void* data = buffer->data();
-    const MyGame::Example::Monster* monster = 
-        MyGame::Example::GetMonster(data);
+    const MyGame::Example::Monster* monster = monsterObj.operator->();
     auto monsterT = monster->UnPack();
     
     if (monster) {

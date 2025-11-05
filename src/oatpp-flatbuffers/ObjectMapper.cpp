@@ -24,10 +24,10 @@
 
 #include "ObjectMapper.hpp"
 
-#include "oatpp/data/stream/BufferStream.hpp"
-#include "oatpp/base/Log.hpp"
+#include "FlatBuffersWrapper.hpp"
+#include "flatbuffers/base.h"
+#include "flatbuffers/verifier.h"
 
-#include <flatbuffers/flatbuffers.h>
 #include <vector>
 #include <memory>
 
@@ -63,43 +63,35 @@ void ObjectMapper::write(data::stream::ConsistentOutputStream* stream,
     return;
   }
   
-  // Check if variant contains a shared_ptr to std::vector<uint8_t>
-  // This is the most common case when using flatbuffers Builder
+  // 优先：FlatBuffers 包装对象（任意 T），类型应当继承自 AbstractFlatBuffersObject。
+  const auto* vt = variant.getValueType();
+  if (vt && vt->extends(AbstractFlatBuffersObject::Class::getType())) {
+    // 注意：oatpp 的 ObjectWrapper::cast 要求“目标类型 extends 源类型”，
+    // 这里我们做上行转换（子 -> 父），因此不能用 cast。改为通过别名 shared_ptr 获取基类指针。
+    auto raw = static_cast<const AbstractFlatBuffersObject*>(variant.get());
+    if (raw) {
+      const uint8_t* data = raw->getBufferData();
+      v_buff_size size = raw->getBufferSize();
+      if (data && size > 0) {
+        writeBinaryData(stream, data, size, errorStack);
+        return;
+      }
+    }
+    errorStack.push("[oatpp::flatbuffers::ObjectMapper::write()]: Empty flatbuffers buffer");
+    return;
+  }
+  
+  // 兼容：直接传 shared_ptr<std::vector<uint8_t>> 的情况
   auto ptr = variant.getPtr();
   if (ptr) {
-    // Try to cast to std::vector<uint8_t>*
-    // Since we can't easily check the type at runtime, we'll try a safe cast
-    const std::vector<uint8_t>* buffer = nullptr;
-    try {
-      buffer = static_cast<const std::vector<uint8_t>*>(ptr.get());
-    } catch (...) {
-      // Not a std::vector<uint8_t>, continue
-    }
-    
+    const auto* buffer = static_cast<const std::vector<uint8_t>*>(ptr.get());
     if (buffer && !buffer->empty()) {
       writeBinaryData(stream, buffer->data(), static_cast<v_buff_size>(buffer->size()), errorStack);
       return;
     }
   }
   
-  // Check if variant contains a FlatBuffersWrapper
-  // Since FlatBuffersWrapper is a template, we can't easily check the type at runtime
-  // Users should pass the buffer directly (std::vector<uint8_t>) or use a helper function
-  
-  // If we reach here, we couldn't extract buffer data
-  // Try to get raw pointer and assume it's a flatbuffers buffer
-  const void* rawPtr = variant.get();
-  if (rawPtr) {
-    // For flatbuffers, we might have a pointer to the buffer
-    // But we need the size - this is problematic
-    // For now, we'll require users to pass the buffer with size
-    errorStack.push("[oatpp::flatbuffers::ObjectMapper::write()]: "
-                    "Cannot extract buffer data. Please pass std::vector<uint8_t> or FlatBuffersWrapper.");
-    return;
-  }
-  
-  errorStack.push("[oatpp::flatbuffers::ObjectMapper::write()]: "
-                  "Unsupported variant type for flatbuffers serialization");
+  errorStack.push("[oatpp::flatbuffers::ObjectMapper::write()]: Unsupported variant type for flatbuffers serialization");
 }
 
 oatpp::Void ObjectMapper::read(oatpp::utils::parser::Caret& caret,
@@ -167,11 +159,17 @@ oatpp::Void ObjectMapper::read(oatpp::utils::parser::Caret& caret,
   // Update caret position
   caret.setPosition(position + bufferSize);
   
-  // Return the buffer as a shared_ptr
-  // Users can then use GetRoot<T> to get the actual Table:
-  // auto buffer = variant.cast<std::shared_ptr<std::vector<uint8_t>>>();
-  // auto table = ::flatbuffers::GetRoot<MyTableType>(buffer->data());
-  // auto wrapper = FlatBuffersWrapper<MyTableType>::createShared(buffer, table);
+  // 如果用户请求的是 flatbuffers 对象类型（继承自 AbstractFlatBuffersObject），
+  // 则根据类型注册表构造相应 T 的包装对象；否则退回为字节数组。
+  if (type->extends(AbstractFlatBuffersObject::Class::getType())) {
+    auto factory = FlatBuffersTypeRegistry::instance().findFactory(type);
+    if (factory) {
+      return factory(bufferCopy);
+    }
+    errorStack.push("[oatpp::flatbuffers::ObjectMapper::read()]: No factory registered for requested FlatBuffers type");
+    return nullptr;
+  }
+  
   return oatpp::Void(bufferCopy);
 }
 

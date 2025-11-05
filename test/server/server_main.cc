@@ -88,13 +88,10 @@ public:
     
     Action act() override {
       try {
-        // 创建示例 Monster buffer
+        // 创建示例 Monster buffer 并包装为 Object<Monster>
         auto buffer = createSampleMonsterBuffer();
-        
-        // 将 buffer 包装为 Void，ObjectMapper 会处理它
-        oatpp::Void variant(buffer);
-        
-        return _return(controller->createDtoResponse(Status::CODE_200, variant));
+        auto monsterObj = ofb::Object<MyGame::Example::Monster>::fromBuffer(buffer);
+        return _return(controller->createDtoResponse(Status::CODE_200, monsterObj));
       } catch (const std::exception& e) {
         return _return(controller->createResponse(
             Status::CODE_500, oatpp::String("Error: ") + e.what()));
@@ -106,64 +103,33 @@ public:
     ENDPOINT_ASYNC_INIT(PostMonster)
     
     Action act() override {
-      // 异步读取请求体为字符串，然后转换为buffer
-      return request->readBodyToStringAsync()
-          .callbackTo(&PostMonster::onBodyRead);
+      // 直接将请求体映射为 Object<Monster>
+      return request->readBodyToDtoAsync<ofb::Object<MyGame::Example::Monster>>(controller->getContentMappers()->getDefaultMapper())
+          .callbackTo(&PostMonster::onMonsterRead);
     }
     
-    Action onBodyRead(const oatpp::String& bodyString) {
-      if (!bodyString || bodyString->empty()) {
-        return _return(controller->createResponse(
-            Status::CODE_400, "Empty request body"));
-      }
-      
-      // 将String转换为vector<uint8_t>
-      auto buffer = std::make_shared<std::vector<uint8_t>>(
-          reinterpret_cast<const uint8_t*>(bodyString->data()),
-          reinterpret_cast<const uint8_t*>(bodyString->data()) + bodyString->size());
-      
-      return onMonsterRead(buffer);
-    }
-    
-    Action onMonsterRead(const std::shared_ptr<std::vector<uint8_t>>& buffer) {
-      if (!buffer || buffer->empty()) {
+    Action onMonsterRead(const ofb::Object<MyGame::Example::Monster>& monster) {
+      if (!monster) {
         return _return(controller->createResponse(
             Status::CODE_400, "Invalid FlatBuffers data"));
       }
-      
-      // 从 buffer 中获取 Monster Table
-      const uint8_t* data = buffer->data();
-      const MyGame::Example::Monster* monster = 
-          MyGame::Example::GetMonster(data);
-      
-      if (!monster) {
-        return _return(controller->createResponse(
-            Status::CODE_400, "Failed to get Monster from buffer"));
-      }
-      
-      // 可以访问 monster 的字段
       auto name = monster->name();
       auto hp = monster->hp();
       auto mana = monster->mana();
       auto pos = monster->pos();
       auto inventory = monster->inventory();
-      
-      std::cout << "Received Monster - Name: " 
-                << (name ? name->c_str() : "null") 
-                << ", HP: " << hp 
+      std::cout << "Received Monster - Name: "
+                << (name ? name->c_str() : "null")
+                << ", HP: " << hp
                 << ", Mana: " << mana << std::endl;
-      
-      // 输出 pos 信息
       if (pos) {
-        std::cout << "Position - X: " << pos->x() 
-                  << ", Y: " << pos->y() 
-                  << ", Z: " << pos->z() 
+        std::cout << "Position - X: " << pos->x()
+                  << ", Y: " << pos->y()
+                  << ", Z: " << pos->z()
                   << std::endl;
       } else {
         std::cout << "Position: null" << std::endl;
       }
-      
-      // 输出 inventory 信息
       if (inventory) {
         std::cout << "Inventory (" << inventory->size() << " items): ";
         for (size_t i = 0; i < inventory->size(); ++i) {
@@ -174,7 +140,6 @@ public:
       } else {
         std::cout << "Inventory: null" << std::endl;
       }
-      
       return _return(controller->createResponse(Status::CODE_200, "OK"));
     }
   };
@@ -231,4 +196,5 @@ int main() {
   runServer();
   return 0;
 }
+
 
