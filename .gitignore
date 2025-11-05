@@ -1,19 +1,129 @@
-CMakeLists.txt.user
-CMakeCache.txt
-CMakeFiles
-CMakeScripts
-Testing
-Makefile
-cmake_install.cmake
-install_manifest.txt
-compile_commands.json
-CTestTestfile.cmake
-_deps
-CMakeUserPresets.json
+# 构建输出
+build/
+out/
+bin/
+lib/
+obj/
 
-# CLion
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#cmake-build-*
+# CMake生成的文件
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+!cmake/*.cmake
+!cmake/modules/*.cmake
+
+# 编译生成的文件
+*.o
+*.obj
+*.so
+*.dylib
+*.dll
+*.exe
+*.a
+*.lib
+*.pdb
+*.ilk
+*.exp
+
+# IDE和编辑器文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# 日志文件
+*.log
+logs/
+log/
+
+# 临时文件
+*.tmp
+*.temp
+*.bak
+*.backup
+*.orig
+
+# 配置文件（包含敏感信息）
+config/local/
+config/*/secrets.json
+config/*/secrets.yaml
+config/*/secrets.yml
+*.env
+.env*
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+
+# 测试输出
+test_results/
+coverage/
+*.gcov
+*.gcno
+*.gcda
+coverage.info
+coverage_html/
+
+# 文档生成
+docs/html/
+docs/latex/
+docs/xml/
+
+# 包管理
+conan.lock
+conanfile.txt.bak
+vcpkg_installed/
+
+# 系统文件
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# 运行时文件
+*.pid
+*.sock
+*.lock
+
+# 部署文件
+deploy/
+dist/
+package/
+
+# 性能分析文件
+*.prof
+*.callgrind
+*.cachegrind
+*.massif
+
+# 内存检查文件
+*.memcheck
+*.helgrind
+*.drd
+
+# 静态分析文件
+*.sarif
+*.plist
+
+# 第三方库构建文件
+third_party/*/build/
+third_party/*/cmake-build-*/
+third_party/*/CMakeCache.txt
+third_party/*/CMakeFiles/
+
+# vscode中使用clangd插件时，会生成.cache/clangd文件夹
+.cache/clangd/
+
+
+# 特定于项目的忽略文件
+# 添加项目特定的忽略规则
