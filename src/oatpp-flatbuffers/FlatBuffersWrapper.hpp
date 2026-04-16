@@ -16,7 +16,7 @@
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * WITHOUT WARRANTIES OR ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
@@ -27,8 +27,11 @@
 
 #include "oatpp/Types.hpp"
 #include "oatpp/data/type/Object.hpp"
+#include "oatpp/utils/parser/Caret.hpp"
 
 #include <memory>
+#include <mutex>
+#include <unordered_map>
 #include <vector>
 #include <functional>
 
@@ -37,6 +40,23 @@
 
 namespace oatpp { namespace flatbuffers {
 namespace type = oatpp::data::type;
+
+/**
+ * 与 oatpp::utils::parser::Caret::getDataMemoryHandle() 相同，用于在零拷贝路径下
+ * 延长底层 body 缓冲的生存期。
+ */
+using CaretMemoryHandle = decltype(std::declval<oatpp::utils::parser::Caret>().getDataMemoryHandle());
+
+/**
+ * ObjectMapper::read 提供给类型工厂的缓冲来源：要么拥有 vector 拷贝，要么借用
+ * Caret 子区间并持有其内存句柄。
+ */
+struct FlatBuffersBufferSource {
+  std::shared_ptr<const std::vector<uint8_t>> owned;
+  CaretMemoryHandle anchor;
+  const uint8_t* borrowData = nullptr;
+  v_buff_size borrowSize = 0;
+};
 
 /**
  * 非模板的抽象基类，统一导出 buffer 访问以便 ObjectMapper 在运行时处理。
@@ -59,7 +79,7 @@ public:
  */
 class FlatBuffersTypeRegistry {
 public:
-  using Factory = std::function<oatpp::Void(const std::shared_ptr<const std::vector<uint8_t>>&)>;
+  using Factory = std::function<oatpp::Void(const FlatBuffersBufferSource&)>;
 private:
   std::mutex m_mutex;
   std::unordered_map<const oatpp::data::type::Type*, Factory> m_factories;
@@ -95,6 +115,9 @@ public:
 private:
   std::shared_ptr<const std::vector<uint8_t>> m_constBuffer;
   std::shared_ptr<std::vector<uint8_t>> m_mutableBuffer;
+  CaretMemoryHandle m_borrowHandle;
+  const uint8_t* m_borrowData = nullptr;
+  v_buff_size m_borrowSize = 0;
   const T* m_constTable = nullptr;
   T* m_mutableTable = nullptr;
 public:
@@ -106,6 +129,12 @@ public:
     : m_mutableBuffer(buffer)
     , m_mutableTable(table)
   {}
+  FlatBuffersWrapper(CaretMemoryHandle anchor, const uint8_t* data, v_buff_size size, const T* table)
+    : m_borrowHandle(std::move(anchor))
+    , m_borrowData(data)
+    , m_borrowSize(size)
+    , m_constTable(table)
+  {}
   const T* getTable() const {
     return m_mutableTable ? m_mutableTable : m_constTable;
   }
@@ -113,11 +142,13 @@ public:
     return m_mutableTable;
   }
   const uint8_t* getBufferData() const override {
+    if (m_borrowHandle) return m_borrowData;
     if (m_mutableBuffer) return m_mutableBuffer->data();
     if (m_constBuffer) return m_constBuffer->data();
     return nullptr;
   }
   v_buff_size getBufferSize() const override {
+    if (m_borrowHandle) return m_borrowSize;
     if (m_mutableBuffer) return static_cast<v_buff_size>(m_mutableBuffer->size());
     if (m_constBuffer) return static_cast<v_buff_size>(m_constBuffer->size());
     return 0;
@@ -132,12 +163,25 @@ public:
       T* table) {
     return std::make_shared<FlatBuffersWrapper<T>>(buffer, table);
   }
+  static std::shared_ptr<FlatBuffersWrapper<T>> fromSource(const FlatBuffersBufferSource& src) {
+    if (src.owned) {
+      if (src.owned->empty()) return nullptr;
+      const uint8_t* data = src.owned->data();
+      const T* table = ::flatbuffers::GetRoot<T>(data);
+      return createShared(src.owned, table);
+    }
+    if (!src.anchor || !src.borrowData || src.borrowSize < 4) {
+      return nullptr;
+    }
+    const T* table = ::flatbuffers::GetRoot<T>(src.borrowData);
+    return std::make_shared<FlatBuffersWrapper<T>>(
+        CaretMemoryHandle(src.anchor), src.borrowData, src.borrowSize, table);
+  }
   static std::shared_ptr<FlatBuffersWrapper<T>> fromBuffer(
       const std::shared_ptr<const std::vector<uint8_t>>& buffer) {
-    if (!buffer || buffer->empty()) return nullptr;
-    const uint8_t* data = buffer->data();
-    const T* table = ::flatbuffers::GetRoot<T>(data);
-    return createShared(buffer, table);
+    FlatBuffersBufferSource src;
+    src.owned = buffer;
+    return fromSource(src);
   }
   static std::shared_ptr<FlatBuffersWrapper<T>> fromMutableBuffer(
       const std::shared_ptr<std::vector<uint8_t>>& buffer) {
@@ -188,9 +232,8 @@ inline oatpp::data::type::Type* FlatBuffersWrapper<T>::Class::getType() {
     oatpp::data::type::Type::Info info;
     info.parent = AbstractFlatBuffersObject::Class::getType();
     auto* t = new oatpp::data::type::Type(FlatBuffersWrapper<T>::Class::CLASS_ID, info);
-    // 注册工厂：输入字节缓冲，输出对应 T 的 FlatBuffersWrapper<T>
-    FlatBuffersTypeRegistry::instance().registerFactory(t, [](const std::shared_ptr<const std::vector<uint8_t>>& buf){
-      auto w = FlatBuffersWrapper<T>::fromBuffer(buf);
+    FlatBuffersTypeRegistry::instance().registerFactory(t, [](const FlatBuffersBufferSource& src){
+      auto w = FlatBuffersWrapper<T>::fromSource(src);
       return oatpp::Void(w, FlatBuffersWrapper<T>::Class::getType());
     });
     return t;
@@ -201,4 +244,3 @@ inline oatpp::data::type::Type* FlatBuffersWrapper<T>::Class::getType() {
 }}
 
 #endif /* OATPP_FLATBUFFERS_FLATBUFFERS_WRAPPER_HPP */
-

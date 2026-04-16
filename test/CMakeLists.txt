@@ -60,6 +60,12 @@ add_ofb_example(oatpp_flatbuffers_client
     client/client_main.cc
 )
 
+# ObjectMapper 读路径单元测试（Caret 句柄 / 裸指针）
+add_ofb_example(oatpp_flatbuffers_object_mapper_read_test
+  SOURCES
+    object_mapper_read_test.cc
+)
+
 # Demo 可执行程序（如果存在）
 if (EXISTS ${CMAKE_CURRENT_LIST_DIR}/demo_main.cc)
   add_ofb_example(oatpp_flatbuffers_demo

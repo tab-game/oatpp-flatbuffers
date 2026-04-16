@@ -56,7 +56,12 @@ elseif(OATPP_MODULES_LOCATION STREQUAL OATPP_MODULES_LOCATION_EXTERNAL)
   ExternalProject_Add(${LIB_OATPP_EXTERNAL}
     GIT_REPOSITORY "https://github.com/oatpp/oatpp.git"
     GIT_TAG origin/master
-    CMAKE_ARGS -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DOATPP_INSTALL=OFF -DOATPP_BUILD_TESTS=OFF
+    CMAKE_ARGS
+      -DCMAKE_BUILD_TYPE=Release
+      -DBUILD_SHARED_LIBS=OFF
+      -DOATPP_INSTALL=OFF
+      -DOATPP_BUILD_TESTS=OFF
+      "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
     INSTALL_COMMAND cmake -E echo "SKIP INSTALL '${LIB_OATPP_EXTERNAL}'"
   )
 
@@ -91,7 +96,8 @@ message("\n#####################################################################
 message("## ${OATPP_THIS_MODULE_NAME} module. Resolving dependencies...\n")
 
 #list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/module")
-find_package(flatbuffers REQUIRED)
+# Debian/Ubuntu 安装为 FlatBuffersConfig.cmake（大小写）；CONFIG 模式可正确找到
+find_package(FlatBuffers CONFIG REQUIRED)
 
 message("\n############################################################################\n")
 

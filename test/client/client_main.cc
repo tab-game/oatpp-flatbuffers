@@ -100,7 +100,7 @@ public:
       return finish();
     }
     const MyGame::Example::Monster* monster = monsterObj.operator->();
-    auto monsterT = monster->UnPack();
+    std::unique_ptr<MyGame::Example::MonsterT> monsterT(monster->UnPack());
     
     if (monster) {
       auto name = monster->name();
@@ -139,15 +139,12 @@ public:
       monsterT->inventory.push_back(1);
       monsterT->inventory.push_back(2);
       monsterT->inventory.push_back(3);
-      monsterT->color = MyGame::Example::Color::Color_Red;
-      auto new_pos = std::make_unique<MyGame::Example::Vec3>();
-      new_pos->mutate_x(4.0f);
-      new_pos->mutate_y(5.0f);
-      new_pos->mutate_z(6.0f);
-      monsterT->pos = std::move(new_pos);
+      monsterT->color = MyGame::Example::Color_Red;
+      monsterT->pos = std::make_unique<MyGame::Example::Vec3>(
+          4.0f, 5.0f, 6.0f, 3.0, MyGame::Example::Color_Green, MyGame::Example::Test());
     }
     ::flatbuffers::FlatBufferBuilder fbb;
-    auto monsterOffset = MyGame::Example::CreateMonster(fbb, monsterT);
+    auto monsterOffset = MyGame::Example::CreateMonster(fbb, monsterT.get());
     fbb.Finish(monsterOffset);
     // 保存 Monster buffer，用于后续的 POST
     m_monsterBuffer = std::make_shared<std::vector<uint8_t>>(

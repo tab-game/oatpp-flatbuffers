@@ -152,24 +152,31 @@ oatpp::Void ObjectMapper::read(oatpp::utils::parser::Caret& caret,
   // Note: We don't verify here because we don't know the root table type
   // Verification should be done by the user when they call GetRoot<T>
   
-  // Create a shared_ptr to hold the buffer
-  // We need to copy the buffer data to ensure it remains valid
-  auto bufferCopy = std::make_shared<std::vector<uint8_t>>(buffer, buffer + bufferSize);
-  
-  // Update caret position
+  // Update caret position before building the result (consume entire remainder)
   caret.setPosition(position + bufferSize);
-  
-  // 如果用户请求的是 flatbuffers 对象类型（继承自 AbstractFlatBuffersObject），
-  // 则根据类型注册表构造相应 T 的包装对象；否则退回为字节数组。
-  if (type->extends(AbstractFlatBuffersObject::Class::getType())) {
+
+  const bool wantsFlatBuffersObject = type->extends(AbstractFlatBuffersObject::Class::getType());
+
+  if (wantsFlatBuffersObject) {
+    FlatBuffersBufferSource source;
+    auto anchor = caret.getDataMemoryHandle();
+    if (anchor) {
+      source.anchor = std::move(anchor);
+      source.borrowData = buffer;
+      source.borrowSize = bufferSize;
+    } else {
+      source.owned = std::make_shared<std::vector<uint8_t>>(buffer, buffer + bufferSize);
+    }
     auto factory = FlatBuffersTypeRegistry::instance().findFactory(type);
     if (factory) {
-      return factory(bufferCopy);
+      return factory(source);
     }
     errorStack.push("[oatpp::flatbuffers::ObjectMapper::read()]: No factory registered for requested FlatBuffers type");
     return nullptr;
   }
-  
+
+  // 非 FlatBuffers 包装类型：始终使用独立拷贝，不依赖 Caret 寿命
+  auto bufferCopy = std::make_shared<std::vector<uint8_t>>(buffer, buffer + bufferSize);
   return oatpp::Void(bufferCopy);
 }
 
