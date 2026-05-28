@@ -66,15 +66,6 @@ add_ofb_example(oatpp_flatbuffers_object_mapper_read_test
     object_mapper_read_test.cc
 )
 
-if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
-  enable_testing()
-  add_test(
-    NAME oatpp_flatbuffers_object_mapper_read_test
-    COMMAND oatpp_flatbuffers_object_mapper_read_test
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/bin
-  )
-endif()
-
 # Demo 可执行程序（如果存在）
 if (EXISTS ${CMAKE_CURRENT_LIST_DIR}/demo_main.cc)
   add_ofb_example(oatpp_flatbuffers_demo

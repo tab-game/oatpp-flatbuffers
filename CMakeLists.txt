@@ -155,5 +155,11 @@ include(cmake/module-utils.cmake)
 add_subdirectory("src")
 
 if(OATPP_BUILD_TESTS)
+  enable_testing()
   add_subdirectory("test")
+  add_test(
+    NAME oatpp_flatbuffers_object_mapper_read_test
+    COMMAND oatpp_flatbuffers_object_mapper_read_test
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+  )
 endif()
