@@ -110,11 +110,89 @@ This repository includes minimal async server/client demos under `test/server` a
 
 Build binaries are produced under `build/bin` (e.g., `oatpp_flatbuffers_server.exe`, `oatpp_flatbuffers_client.exe`).
 
-## Notes & Caveats
+## Lifecycle & third-party integration guidelines
 
-- Validation: The mapper does not auto-verify buffers by schema. You may use `flatbuffers::Verifier` where appropriate.
-- Type binding: `readBodyToDtoAsync<Object<T>>` requires the target `T` to be known at compile-time. The mapper uses an internal registry to construct the right wrapper for `T`.
-- Memory: The wrapper retains the underlying buffer (`std::vector<uint8_t>`). Keep this in mind when copying.
+Use this section when defining SDK or cross-module contracts. Behavior is covered by `test/object_mapper_read_test.cc`.
+
+### Core rules
+
+| Rule | Details |
+|------|---------|
+| **Keep `Object<T>` for long-lived views** | `ofb::Object<T>` (`FlatBuffersWrapper<T>`) owns or pins the underlying bytes. |
+| **Do not cache bare table pointers** | `obj.operator->()`, `monster->name()`, `name()->c_str()`, etc. all point into the **same** buffer; they become invalid when `Object` is destroyed. |
+| **Use `UnPack()` for owned data** | `std::unique_ptr<MonsterT>(obj->UnPack())` allocates a native object with copied strings; safe after `Object` is gone. |
+| **Writes copy synchronously** | `createDtoResponse` calls `writeToString` before returning; the HTTP body does not reference handler stack locals. |
+
+### HTTP read (`readBodyToDto` / `readBodyToDtoAsync`)
+
+Typical path: `BodyDecoder` → `oatpp::String` body → `readFromString` → `Object<T>`.
+
+- When `Caret` has `getDataMemoryHandle()` (from `oatpp::String`), the mapper **borrows** that storage instead of copying into a `vector`.
+- **`Object<T>` must outlive all field access**; destroying it releases the backing `std::string`.
+- In async handlers, store **`ofb::Object<T>` by value** (or `UnPack()`), not only `const T*`.
+
+```cpp
+// OK: keep the wrapper
+ofb::Object<MyGame::Example::Monster> m_monster;
+
+Action onMonsterRead(const ofb::Object<MyGame::Example::Monster>& monsterObj) {
+  m_monster = monsterObj;
+  return _return(...);
+}
+
+// Unsafe: bare pointer outlives the wrapper
+const MyGame::Example::Monster* m_bad = nullptr;
+Action onMonsterRead(const ofb::Object<MyGame::Example::Monster>& monsterObj) {
+  m_bad = monsterObj.operator->();
+  return _return(...);
+}
+```
+
+### Local build (`FlatBufferBuilder` / `fromBuffer`)
+
+- After **`FlatBufferBuilder` is destroyed**, `GetBufferPointer()` is invalid. Copy into a `vector` first:
+
+```cpp
+flatbuffers::FlatBufferBuilder fbb;
+// ... Finish ...
+auto buffer = std::make_shared<std::vector<uint8_t>>(
+    fbb.GetBufferPointer(),
+    fbb.GetBufferPointer() + fbb.GetSize());
+auto obj = ofb::Object<MyGame::Example::Monster>::fromBuffer(buffer);
+```
+
+- `fromBuffer` uses an **owned** `shared_ptr<const vector<uint8_t>>` (different from HTTP borrow, same rule: keep `Object` or the buffer alive while reading).
+
+### Raw `Caret` and non-HTTP sources
+
+- `Caret(const char*, size)` without a memory handle triggers a **full copy** into `vector`.
+- If you pass raw pointers yourself, they must remain valid for the whole lifetime of `Object<T>`, or use `fromBuffer` / `oatpp::String`.
+
+### Mutation
+
+- Only `fromMutableBuffer` + `getMutable()` supports in-buffer mutation; HTTP borrow paths are **read-only** views.
+- Whether `mutate_*` exists depends on your schema and FlatBuffers codegen options.
+
+### Async and threads
+
+- Delayed access is fine as long as **`Object<T>`** is still held (see lifecycle tests).
+- Cross-thread use follows normal `shared_ptr` rules; no extra locking in this library.
+
+### Validation and typing
+
+- No automatic schema verification; use `flatbuffers::Verifier` for untrusted input if needed.
+- `readBodyToDtoAsync<Object<T>>` requires a compile-time `T`; use separate types/branches for multiple roots.
+
+### Running lifecycle tests
+
+```bash
+cmake -B build -DCMAKE_CXX_COMPILER=g++ \
+  -DFlatBuffers_DIR=/usr/lib/x86_64-linux-gnu/cmake/flatbuffers \
+  -DOATPP_MODULES_LOCATION=EXTERNAL -DOATPP_BUILD_TESTS=ON
+cmake --build build -j4
+./build/bin/oatpp_flatbuffers_object_mapper_read_test
+# or: ctest --test-dir build -R oatpp_flatbuffers_object_mapper_read_test
+```
 
 ## License
 
